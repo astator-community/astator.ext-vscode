@@ -1,7 +1,7 @@
 {
 	"name": "astator-ext",
 	"displayName": "astator-ext",
-	"icon": "assets/appicon.png",
+	"icon": "assets/icon.png",
 	"description": "",
 	"version": "0.0.1",
 	"engines": {
@@ -20,8 +20,20 @@
 		"commands": [
 			{
 				"command": "astator-ext.openCommands",
-				"title": "astator: 打开命令列表",
-				"icon": "assets/appicon.png"
+				"title": "astator: 命令列表",
+				"icon": "assets/icon.png"
+			},
+			{
+				"command": "astator-ext.runProject",
+				"title": "astator: 运行项目"
+			},
+			{
+				"command": "astator-ext.runScript",
+				"title": "astator: 运行脚本"
+			},
+			{
+				"command": "astator-ext.saveProject",
+				"title": "astator: 保存项目"
 			},
 			{
 				"command": "astator-ext.connect",
@@ -30,18 +42,6 @@
 			{
 				"command": "astator-ext.createProject",
 				"title": "astator: 新建项目"
-			},
-			{
-				"command": "astator-ext.runProject",
-				"title": "astator: 运行项目"
-			},
-			{
-				"command": "astator-ext.saveProject",
-				"title": "astator: 保存项目"
-			},
-			{
-				"command": "astator-ext.test",
-				"title": "astator: 测试"
 			}
 		],
 		"menus": {
