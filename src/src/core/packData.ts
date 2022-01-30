@@ -20,8 +20,8 @@ export class PackData {
         buffer.writeInt32BE(this.key.length, 4);
         buffer.write(this.key, 4 + 4);
 
-        buffer.writeInt32BE(this.description.length, 4 + 4 + 256);
-        buffer.write(this.description, 4 + 4 + 4 + 256);
+        buffer.writeInt32BE(Buffer.byteLength(this.description, "utf8"), 4 + 4 + 256);
+        buffer.write(this.description, 4 + 4 + 4 + 256, "utf8");
 
         buffer.writeInt32BE(this.buffer.length, 4 + 4 + 4 + 256 + 256);
         this.buffer.copy(buffer, 4 + 4 + 4 + 4 + 256 + 256);

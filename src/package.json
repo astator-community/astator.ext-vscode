@@ -1,9 +1,10 @@
 {
 	"name": "astator-ext",
+	"publisher": "astator-ext",
 	"displayName": "astator-ext",
 	"icon": "assets/icon.png",
 	"description": "",
-	"version": "0.0.1",
+	"version": "0.1.0",
 	"engines": {
 		"vscode": "^1.62.0"
 	},

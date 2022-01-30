@@ -322,12 +322,12 @@ public static class Runtime
 	</ItemGroup>
 
     <ProjectExtensions>
+        <IsObfuscate>True</IsObfuscate>
         <ApkBuilderConfigs>
             <Label>${projectName}</Label>
             <PackageName>com.script.${projectName}</PackageName>
             <Version>1.0.0</Version>
-            <appicon></appicon>
-        </ScriptConfig>
+        </ApkBuilderConfigs>
     </ProjectExtensions>
 
 </Project>
