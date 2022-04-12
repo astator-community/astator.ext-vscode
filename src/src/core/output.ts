@@ -1,42 +1,38 @@
 import * as Vscode from 'vscode';
 
 export class Output {
-    static instance: Output | undefined;
-    output: Vscode.OutputChannel;
+    static outputChannel: Vscode.OutputChannel;
 
-    constructor() {
-        this.output = Vscode.window.createOutputChannel("astator");
-    }
-
-    static getInstance(): Output {
-        if (!Output.instance) {
-            Output.instance = new Output();
+    static getChannel() {
+        if (this.outputChannel === undefined || this.outputChannel === null) {
+            this.outputChannel = Vscode.window.createOutputChannel("astator调试");
+            this.outputChannel.show();
         }
-        return Output.instance;
+        return this.outputChannel;
     }
 
-    appendLine(value: string): void {
-        this.output.appendLine(value);
+    static appendLine(value: string) {
+        this.getChannel()?.appendLine(value);
     }
 
-    append(value: string): void {
-        this.output.append(value);
+    static append(value: string) {
+        this.getChannel()?.append(value);
     }
 
-    clear(): void {
-        this.output.clear();
+    static staticclear() {
+        this.getChannel()?.clear();
     }
 
 
-    show(preserveFocus?: boolean): void {
-        this.output.show(preserveFocus);
+    static show(preserveFocus?: boolean) {
+        this.getChannel()?.show(preserveFocus);
     }
 
-    hide(): void {
-        this.output.hide();
+    static hide() {
+        this.getChannel()?.hide();
     }
 
-    dispose(): void {
-        this.output.dispose();
+    static dispose() {
+        this.getChannel()?.dispose();
     }
 }

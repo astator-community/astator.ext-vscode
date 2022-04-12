@@ -1,35 +1,21 @@
 /* eslint-disable @typescript-eslint/naming-convention */
 import * as Vscode from 'vscode';
 import * as Fs from "fs";
-import * as FsExtra from "fs-extra";
 import * as Path from 'path';
-import * as AdmZip from 'adm-zip';
-import * as net from 'net';
+import { ClientCommands } from './clientCommands';
+import { ServerCommands } from './serverCommands';
 import { Output } from './output';
-import { MaxBodyLen, Stick } from "@lvgithub/stick";
-import { PackData } from './packData';
-import { start } from 'repl';
 
 
 export class Commands {
-
     extContext: Vscode.ExtensionContext;
-    tcpClient: net.Socket;
-    output: Output;
-    stick: Stick;
-    isConnected: boolean;
 
     constructor(extContext: Vscode.ExtensionContext) {
         this.extContext = extContext;
-        this.output = Output.getInstance();
-        this.output.show();
-        this.tcpClient = new net.Socket();
-        this.stick = new Stick(1024);
-        this.stick.setMaxBodyLen(MaxBodyLen['2048M']);
-        this.isConnected = false;
+        ServerCommands.startAsync();
     }
 
-    public async connect(): Promise<void> {
+    public async connectDevice() {
         let deviceList = this.extContext.globalState.get<string[]>("deviceList", []).slice();
         if (deviceList.length >= 15) {
             deviceList.splice(15, deviceList.length - 15);
@@ -57,163 +43,73 @@ export class Commands {
                 return;
             }
             else {
-                this.tcpClient = new net.Socket();
-
-                this.tcpClient.connect(1024, result);
-
-                this.stick = new Stick(1024);
-                this.stick.setMaxBodyLen(MaxBodyLen['2048M']);
-
-                this.stick.onBody((body: Buffer) => {
-                    var pack: PackData = PackData.parse(body);
-                    switch (pack.key) {
-                        case "init":
-                            this.output.appendLine("连接成功: " + pack.description);
-                            this.isConnected = true;
-                            break;
-                        case "showMessage":
-                            this.output.appendLine(pack.buffer.toString());
-                            break;
-                        default:
-                            break;
-                    }
-                });
-
-                this.tcpClient.on("data", (data) => {
-                    this.stick.putData(data);
-                });
-
-                this.tcpClient.on("close", (_data) => {
-                    this.isConnected = false;
-                });
-
-                this.tcpClient.on('error', (error) => {
-                    this.output.appendLine(error.message);
-                    this.isConnected = false;
-                });
+                this.extContext.globalState.update("deviceList", deviceList);
+                ClientCommands.connectAsync(result);
+                deviceList.pop();
+                deviceList.pop();
+                deviceList.splice(deviceList.indexOf(result), 1);
+                deviceList.unshift(result);
             }
-
         }
     }
 
-    public runProject(): void {
-        if (!this.isConnected) {
-            Vscode.window.showErrorMessage("请先连接设备!");
+    public async connectLatestDevice() {
+        let deviceList = this.extContext.globalState.get<string[]>("deviceList", []).slice();
+        if (deviceList.length >= 15) {
+            deviceList.splice(15, deviceList.length - 15);
+        }
+        else if (deviceList.length === 0) {
+            Vscode.window.showErrorMessage("设备列表为空!");
             return;
         }
-        let editors = Vscode.window.visibleTextEditors;
-        editors.forEach(editor => {
-            editor.document.save();
-        });
-        let folders = Vscode.workspace.workspaceFolders;
-        if (folders !== undefined) {
-            let directory = folders[0].uri.fsPath;
+        ClientCommands.connectAsync(deviceList[0]);
+    }
 
-            Fs.readdir(directory, "utf8", (_err, list) => {
-                let zip = new AdmZip();
-                list.forEach(name => {
-                    if (name !== ".vscode" && name !== "bin" && name !== "obj") {
-                        let temp = Path.join(directory, name);
-                        let stat = Fs.lstatSync(temp);
-                        if (stat.isDirectory()) {
-                            zip.addLocalFolder(temp, name);
-                        }
-                        else {
-                            zip.addLocalFile(temp);
-                        }
-                    }
-                });
+    public runProject() {
+        let clientISconnected = ClientCommands.checkIsConnected();
+        let serverISconnected = ServerCommands.checkIsConnected();
 
-                let buffer = zip.toBuffer();
+        if (!clientISconnected && !serverISconnected) {
+            Vscode.window.showErrorMessage("未连接设备, 请连接设备后重试!");
+        }
 
-                let dirArr = directory.split(Path.sep);
-                let id = dirArr[dirArr.length - 1];
-
-                let packData: PackData = new PackData("runProject", id, buffer);
-                this.tcpClient.write(packData.makeBuffer());
-            });
+        if (clientISconnected) {
+            ClientCommands.runProject();
+        }
+        if (serverISconnected) {
+            ServerCommands.runProject();
         }
     }
 
     public async runScript(): Promise<void> {
-        if (!this.isConnected) {
-            Vscode.window.showErrorMessage("请先连接设备!");
-            return;
-        }
-        let activeEditorFileName = Vscode.window.activeTextEditor?.document.fileName;
-        if (activeEditorFileName === undefined || !activeEditorFileName.endsWith(".cs")) {
-            return;
+        let clientISconnected = ClientCommands.checkIsConnected();
+        let serverISconnected = ServerCommands.checkIsConnected();
+
+        if (!clientISconnected && !serverISconnected) {
+            Vscode.window.showErrorMessage("未连接设备, 请连接设备后重试!");
         }
 
-        let scriptFileName = Path.basename(activeEditorFileName);
-
-        let editors = Vscode.window.visibleTextEditors;
-        editors.forEach(editor => {
-            editor.document.save();
-        });
-
-        let folders = Vscode.workspace.workspaceFolders;
-        if (folders !== undefined) {
-            let directory = folders[0].uri.fsPath;
-
-            Fs.readdir(directory, "utf8", (_err, list) => {
-                let zip = new AdmZip();
-                list.forEach(name => {
-                    if (name !== ".vscode" && name !== "bin" && name !== "obj") {
-                        let temp = Path.join(directory, name);
-                        let stat = Fs.lstatSync(temp);
-                        if (stat.isDirectory()) {
-                            zip.addLocalFolder(temp, name);
-                        }
-                        else {
-                            zip.addLocalFile(temp);
-                        }
-                    }
-                });
-
-                let buffer = zip.toBuffer();
-
-                let dirArr = directory.split(Path.sep);
-                let id = dirArr[dirArr.length - 1];
-
-
-                let packData: PackData = new PackData("runScript", id + "|" + scriptFileName!, buffer);
-                this.tcpClient.write(packData.makeBuffer());
-            });
+        if (clientISconnected) {
+            ClientCommands.runScript();
+        }
+        if (serverISconnected) {
+            ServerCommands.runScript();
         }
     }
 
     public async saveProject(): Promise<void> {
-        let editors = Vscode.window.visibleTextEditors;
-        editors.forEach(editor => {
-            editor.document.save();
-        });
-        let folders = Vscode.workspace.workspaceFolders;
-        if (folders !== undefined) {
-            let directory = folders[0].uri.fsPath;
+        let clientISconnected = ClientCommands.checkIsConnected();
+        let serverISconnected = ServerCommands.checkIsConnected();
 
-            Fs.readdir(directory, "utf8", (err, list) => {
-                let zip = new AdmZip();
-                list.forEach(name => {
-                    if (name !== ".vscode" && name !== "bin" && name !== "obj") {
-                        let temp = Path.join(directory, name);
-                        let stat = Fs.lstatSync(temp);
-                        if (stat.isDirectory()) {
-                            zip.addLocalFolder(temp, name);
-                        }
-                        else {
-                            zip.addLocalFile(temp);
-                        }
-                    }
-                });
+        if (!clientISconnected && !serverISconnected) {
+            Vscode.window.showErrorMessage("未连接设备, 请连接设备后重试!");
+        }
 
-                let buffer = zip.toBuffer();
-
-                let dirArr = directory.split(Path.sep);
-                let id = dirArr[dirArr.length - 1];
-                let packData: PackData = new PackData("saveProject", id, buffer);
-                this.tcpClient.write(packData.makeBuffer());
-            });
+        if (clientISconnected) {
+            ClientCommands.saveProject();
+        }
+        if (serverISconnected) {
+            ServerCommands.saveProject();
         }
     }
 
@@ -234,12 +130,13 @@ export class Commands {
 
 
                     let programCode =
-                        `using System;   
+                        `using astator.Core.Script;
+using AstatorScript1.Core;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;               
-using astator.Core;      
-using astator.Core.Script;
+using System.Text;
+using ${projectName}.Core;
 
 namespace ${projectName};
 
@@ -255,12 +152,13 @@ public class Program
 `;
 
                     let testCode =
-                        `using System;   
+                        `using astator.Core.Script;
+using AstatorScript1.Core;
+using System;
 using System.Collections.Generic;
 using System.Linq;
-using System.Text;               
-using astator.Core;      
-using astator.Core.Script;
+using System.Text;
+using ${projectName}.Core;
 
 namespace ${projectName};
 public class Test
@@ -275,38 +173,80 @@ public class Test
 `;
 
                     let runtimeCode =
-                        `using System;   
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;    
-using astator.Core;
+                        `
+using System;
 using astator.Core.UI;
 using astator.Core.UI.Floaty;
 using astator.Core.Threading;
-using static astator.Core.Globals.Permission;
+using astator.Core.Script;
+using Android.App;
 
-namespace ${projectName};
-
+namespace ${projectName}.Core;
 public static class Runtime
 {
+    
+    /// <summary>
+    /// 实例
+    /// </summary>
     public static ScriptRuntime Instance { get; set; }
 
-    public static string ScriptId { get => Instance.ScriptId; }
+    /// <summary>
+    /// 脚本自身的activity, 非ui模式时为null
+    /// </summary>
+    public static Activity Activity => Instance.Activity;
 
-    public static UiManager Ui { get => Instance.Ui; }
+    /// <summary>
+    /// 脚本id
+    /// </summary>
+    public static string ScriptId => Instance.ScriptId;
 
-    public static FloatyManager Floatys { get => Instance.Floatys; }
+    /// <summary>
+    /// ui管理
+    /// </summary>
+    public static UiManager Ui => Instance.Ui;
 
-    public static ScriptThreadManager Threads { get => Instance.Threads; }
+    /// <summary>
+    /// 悬浮窗相关
+    /// </summary>
+    public static FloatyHelper FloatyHelper => Instance.FloatyHelper;
 
-    public static ScriptTaskManager Tasks { get => Instance.Tasks; }
+    /// <summary>
+    /// 线程管理
+    /// </summary>
+    public static ThreadManager Threads => Instance.Threads;
 
-    public static bool IsUiMode { get => Instance.IsUiMode; }
+    /// <summary>
+    /// Task管理
+    /// </summary>
+    public static TaskManager Tasks => Instance.Tasks;
 
-    public static ScriptState State { get => Instance.State; }
+    public static PermissionHelper PermissionHelper => Instance.PermissionHelper;
 
-    public static string Directory { get => Instance.Directory; }
-}
+    /// <summary>
+    /// 是否为ui模式
+    /// </summary>
+    public static bool IsUiMode => Instance.IsUiMode;
+
+    /// <summary>
+    /// 脚本工作路径
+    /// </summary>
+    public static string WorkDir => Instance.WorkDir;
+
+    /// <summary>
+    /// 在脚本停止时退出应用, 只在打包apk有效
+    /// </summary>
+    public static bool IsExitAppOnStoped => Instance.IsExitAppOnStoped;
+
+    /// <summary>
+    /// 添加一个脚本停止时的回调
+    /// </summary>
+    public static void AddExitCallback(Action callback) => Instance.AddExitCallback(callback);
+    
+    /// <summary>
+    /// 停止脚本
+    /// </summary>
+    public static void SetStop() => Instance.SetStop();
+}              
 `;
 
                     let projectCode =
@@ -314,15 +254,21 @@ public static class Runtime
 
     <PropertyGroup>
         <TargetFramework>net6.0-android</TargetFramework>
+        <OutputType>Library</OutputType>
+        <RootNamespace>$safeprojectname$</RootNamespace>
         <UseMaui>true</UseMaui>
+                    
+        <SupportedOSPlatformVersion>24.0</SupportedOSPlatformVersion>
     </PropertyGroup>
-
+                    
     <ItemGroup>
-	  <PackageReference Include="astator.Core" Version="*" />
-	</ItemGroup>
-
+        <PackageReference Include="astator.Core" Version="*" />
+    </ItemGroup>
+                    
     <ProjectExtensions>
-        <IsObfuscate>True</IsObfuscate>
+        <IsObfuscate>true</IsObfuscate>
+        <UseOCR>false</UseOCR>
+        <BuildX86>true</BuildX86>
         <ApkBuilderConfigs>
             <Label>${projectName}</Label>
             <PackageName>com.script.${projectName}</PackageName>
@@ -362,6 +308,14 @@ public static class Runtime
                             }
                         });
 
+                        Fs.mkdir(Path.join(uri, "assets"), { recursive: true }, (_) => {
+
+                        });
+
+                        Fs.mkdir(Path.join(uri, "ref"), { recursive: true }, (_) => {
+
+                        });
+
                         Fs.mkdir(Path.join(uri, "Core"), { recursive: true }, (err) => {
                             if (err) {
                                 Vscode.window.showWarningMessage(err.message);
@@ -389,35 +343,39 @@ public static class Runtime
 
         let list: string[] =
             [
-                "astator: 连接设备",
-                "astator: 运行项目",
-                "astator: 运行脚本",
-                "astator: 保存项目",
-                "astator: 新建项目"
+                "连接设备",
+                "连接最近的设备",
+                "新建项目",
+                "保存项目",
+                "运行脚本",
+                "运行项目",
             ];
         let result = await Vscode.window.showQuickPick(list, { title: "astator命令" });
         if (result) {
-            if (result === "astator: 连接设备") {
-                this.connect();
+            if (result === "连接设备") {
+                this.connectDevice();
             }
-            else if (result === "astator: 运行项目") {
+            else if (result === "连接最近的设备") {
+                this.connectLatestDevice();
+            }
+            else if (result === "运行项目") {
                 this.runProject();
             }
-            else if (result === "astator: 运行脚本") {
+            else if (result === "运行脚本") {
                 this.runScript();
             }
-            else if (result === "astator: 保存项目") {
+            else if (result === "保存项目") {
                 this.saveProject();
             }
-            else if (result === "astator: 新建项目") {
+            else if (result === "新建项目") {
                 this.createProject();
             }
         }
     }
 
-    public test(): void {
+    // public createCSFile(): void {
 
-    }
+    // }
 }
 
 
